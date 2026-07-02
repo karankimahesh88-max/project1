@@ -1,79 +1,52 @@
-"""
-Pure functions that turn raw transactions / investments into insights.
-Kept dependency-free from Streamlit so they're easy to unit test.
-"""
+"""Simple analytics helpers operating on the transactions DataFrame."""
 import pandas as pd
 
 
+def category_breakdown(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    exp = df[df["type"] == "expense"]
+    if exp.empty:
+        return exp
+    return exp.groupby("category", as_index=False)["amount"].sum()
+
+
 def monthly_totals(df: pd.DataFrame) -> pd.DataFrame:
-    """Return income/expense totals grouped by month (YYYY-MM)."""
     if df.empty:
-        return pd.DataFrame(columns=["month", "income", "expense"])
+        return df
     d = df.copy()
+    d["date"] = pd.to_datetime(d["date"])
     d["month"] = d["date"].dt.to_period("M").astype(str)
-    grouped = d.pivot_table(index="month", columns="type", values="amount", aggfunc="sum", fill_value=0)
-    for col in ("income", "expense"):
-        if col not in grouped:
-            grouped[col] = 0
-    return grouped.reset_index().sort_values("month")
+    grouped = d.groupby(["month", "type"], as_index=False)["amount"].sum()
+    return grouped
 
 
-def category_breakdown(df: pd.DataFrame, tx_type: str = "expense") -> pd.DataFrame:
+def generate_insights(df: pd.DataFrame, portfolio_growth) -> list:
+    tips = []
     if df.empty:
-        return pd.DataFrame(columns=["category", "amount"])
-    d = df[df["type"] == tx_type]
-    return d.groupby("category")["amount"].sum().reset_index().sort_values("amount", ascending=False)
+        return ["Add some transactions to see personalized insights here."]
 
-
-def savings_ratio(df: pd.DataFrame) -> float:
-    """(income - expense) / income, as a percentage."""
     income = df.loc[df["type"] == "income", "amount"].sum()
     expense = df.loc[df["type"] == "expense", "amount"].sum()
-    if income == 0:
-        return 0.0
-    return round(((income - expense) / income) * 100, 2)
 
+    if income > 0:
+        savings_ratio = (income - expense) / income * 100
+        if savings_ratio < 0:
+            tips.append("You're spending more than you earn this period — worth a closer look.")
+        elif savings_ratio < 20:
+            tips.append(f"You're saving about {savings_ratio:.0f}% of income — try aiming for 20%+.")
+        else:
+            tips.append(f"Nice! You're saving about {savings_ratio:.0f}% of your income.")
 
-def month_over_month_change(df: pd.DataFrame, category: str | None = None) -> float | None:
-    """% change in spending between the last two months (optionally filtered by category)."""
-    d = df[df["type"] == "expense"].copy()
-    if category:
-        d = d[d["category"] == category]
-    if d.empty:
-        return None
-    d["month"] = d["date"].dt.to_period("M")
-    monthly = d.groupby("month")["amount"].sum().sort_index()
-    if len(monthly) < 2:
-        return None
-    prev, curr = monthly.iloc[-2], monthly.iloc[-1]
-    if prev == 0:
-        return None
-    return round(((curr - prev) / prev) * 100, 2)
+    exp_by_cat = category_breakdown(df)
+    if not exp_by_cat.empty:
+        top_cat = exp_by_cat.sort_values("amount", ascending=False).iloc[0]
+        tips.append(f"Your biggest expense category is {top_cat['category']}.")
 
+    if portfolio_growth is not None:
+        if portfolio_growth >= 0:
+            tips.append(f"Your portfolio is up {portfolio_growth:.1f}% overall.")
+        else:
+            tips.append(f"Your portfolio is down {abs(portfolio_growth):.1f}% overall.")
 
-def generate_insights(df: pd.DataFrame, portfolio_growth_pct: float | None = None) -> list[str]:
-    """Human-readable monthly insight strings."""
-    insights = []
-
-    overall_change = month_over_month_change(df)
-    if overall_change is not None:
-        direction = "increased" if overall_change > 0 else "decreased"
-        insights.append(f"Overall spending {direction} by {abs(overall_change)}% vs. last month.")
-
-    for cat in df["category"].dropna().unique() if not df.empty else []:
-        change = month_over_month_change(df, category=cat)
-        if change is not None and abs(change) >= 10:
-            direction = "increased" if change > 0 else "decreased"
-            insights.append(f"{cat} spending {direction} by {abs(change)}% vs. last month.")
-
-    ratio = savings_ratio(df)
-    insights.append(f"Your current savings ratio is {ratio}% of income.")
-
-    if portfolio_growth_pct is not None:
-        direction = "grew" if portfolio_growth_pct >= 0 else "declined"
-        insights.append(f"Investment portfolio {direction} by {abs(portfolio_growth_pct)}%.")
-
-    if not insights:
-        insights.append("Add some transactions to start seeing personalized insights.")
-
-    return insights
+    return tips
