@@ -6,6 +6,12 @@ Run with:  streamlit run app.py
 Mock mode: auth_service, db_service, and stock_service are in-memory mocks —
 no Firebase, no secrets.toml needed. See services/ for details.
 """
+import os
+import sys
+
+# --- FORCE PYTHON TO SEE SUBFOLDERS (FIXES MODULENOTFOUNDERROR) ---
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
@@ -201,43 +207,54 @@ def page_transactions(uid: str, currency: str):
     page_df = filtered.iloc[start:end]
 
     st.caption(f"Showing {min(end, total_rows)} of {total_rows} transactions")
-    for _, row in page_df.iterrows():
-        cols = st.columns([2, 2, 2, 3, 2, 1, 1])
-        cols[0].write(row["date"])
-        cols[1].write(row["type"])
-        cols[2].write(row["category"])
-        cols[3].write(row["description"])
-        cols[4].write(f"{sym}{row['amount']:,.2f}")
-        if cols[5].button("✏️", key=f"edit_{row['id']}"):
-            st.session_state["editing_tx"] = row["id"]
-        if cols[6].button("🗑️", key=f"del_{row['id']}"):
-            db_service.delete_transaction(uid, row["id"])
-            st.rerun()
+    
+    # --- FIXED EMPTY DATAFRAME HANDLING ---
+    if total_rows > 0:
+        for _, row in page_df.iterrows():
+            cols = st.columns([2, 2, 2, 3, 2, 1, 1])
+            cols[0].write(row["date"])
+            cols[1].write(row["type"])
+            cols[2].write(row["category"])
+            cols[3].write(row["description"])
+            cols[4].write(f"{sym}{row['amount']:,.2f}")
+            if cols[5].button("✏️", key=f"edit_{row['id']}"):
+                st.session_state["editing_tx"] = row["id"]
+            if cols[6].button("🗑️", key=f"del_{row['id']}"):
+                db_service.delete_transaction(uid, row["id"])
+                st.rerun()
+    else:
+        st.info("No transactions match your current search/filters.")
 
-    # Inline edit form
+    # --- FIXED INLINE EDIT FORM OUT-OF-BOUNDS ERROR ---
     if st.session_state.get("editing_tx"):
         tx_id = st.session_state["editing_tx"]
-        tx_row = df[df["id"] == tx_id].iloc[0]
-        st.subheader("Edit transaction")
-        with st.form("edit_tx_form"):
-            new_amount = st.number_input("Amount", value=float(tx_row["amount"]))
-            new_category = st.selectbox(
-                "Category", db_service.CATEGORIES,
-                index=db_service.CATEGORIES.index(tx_row["category"])
-                if tx_row["category"] in db_service.CATEGORIES else 0,
-            )
-            new_desc = st.text_input("Description", value=tx_row["description"])
-            save = st.form_submit_button("Save changes")
-            cancel = st.form_submit_button("Cancel")
-        if save:
-            db_service.update_transaction(
-                uid, tx_id, amount=new_amount, category=new_category, description=new_desc
-            )
+        matching_txs = df[df["id"] == tx_id]
+        
+        if not matching_txs.empty:
+            tx_row = matching_txs.iloc[0]
+            st.subheader("Edit transaction")
+            with st.form("edit_tx_form"):
+                new_amount = st.number_input("Amount", value=float(tx_row["amount"]))
+                new_category = st.selectbox(
+                    "Category", db_service.CATEGORIES,
+                    index=db_service.CATEGORIES.index(tx_row["category"])
+                    if tx_row["category"] in db_service.CATEGORIES else 0,
+                )
+                new_desc = st.text_input("Description", value=tx_row["description"])
+                save = st.form_submit_button("Save changes")
+                cancel = st.form_submit_button("Cancel")
+            if save:
+                db_service.update_transaction(
+                    uid, tx_id, amount=new_amount, category=new_category, description=new_desc
+                )
+                st.session_state.pop("editing_tx")
+                st.rerun()
+            if cancel:
+                st.session_state.pop("editing_tx")
+                st.rerun()
+        else:
+            # Safely clear editing state if transaction is no longer present in current filtered views
             st.session_state.pop("editing_tx")
-            st.rerun()
-        if cancel:
-            st.session_state.pop("editing_tx")
-            st.rerun()
 
 
 def page_investments(uid: str, currency: str):
@@ -354,7 +371,7 @@ def page_settings(uid: str, prefs: dict):
     )
     if st.button("Save preferences"):
         db_service.update_preferences(uid, darkMode=dark_mode, currency=currency,
-                                       widgetOrder=prefs.get("widgetOrder", []))
+                                      widgetOrder=prefs.get("widgetOrder", []))
         st.success("Preferences saved.")
         st.rerun()
 
