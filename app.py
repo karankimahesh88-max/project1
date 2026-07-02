@@ -21,8 +21,74 @@ from utils import analytics
 from utils.theme import apply_custom_theme
 from components import charts
 
+# ----------------------------------------------------------------------------
+# Theme Overrides for Visibility and Contrast (Monarch Inspired Aesthetic)
+# ----------------------------------------------------------------------------
+def inject_monarch_theme():
+    st.markdown(
+        """
+        <style>
+        /* Global Canvas Background */
+        .stApp {
+            background-color: #F9F8F3 !important;
+            color: #1A1D20 !important;
+        }
+        
+        /* Form & Component Cards Container styling */
+        div[data-testid="stExpander"], div[data-testid="stForm"], .stBlock, div[data-testid="stMetric"] {
+            background-color: #FFFFFF !important;
+            border-radius: 12px !important;
+            border: 1px solid #E2E4E6 !important;
+            padding: 15px !important;
+        }
+
+        /* FIX: Input Fields Text and Background Contrast */
+        .stTextInput input, .stNumberInput input, div[data-baseweb="select"], .stDateInput input {
+            background-color: #FFFFFF !important;
+            color: #1A1D20 !important;
+            border: 1px solid #CCCCCC !important;
+            border-radius: 8px !important;
+        }
+        
+        /* FIX: Dropdown / Select Option Text Visibility */
+        div[data-testid="stSelectbox"] label, div[data-testid="stSelectbox"] div {
+            color: #1A1D20 !important;
+        }
+
+        /* FIX: Form Submit, Trash Buttons & Navigation Buttons */
+        button[kind="primary"], button[kind="secondary"], .stButton>button, div[data-testid="stFormSubmitButton"] button {
+            background-color: #101828 !important; /* Deep Navy */
+            color: #FFFFFF !important;            /* Crisp White Text */
+            border-radius: 8px !important;
+            border: none !important;
+            font-weight: 600 !important;
+            transition: all 0.2s ease-in-out !important;
+            padding: 0.5rem 1rem !important;
+        }
+
+        /* Button Hover Effect */
+        button[kind="primary"]:hover, button[kind="secondary"]:hover, .stButton>button:hover, div[data-testid="stFormSubmitButton"] button:hover {
+            background-color: #1F2A37 !important;
+            color: #FFFFFF !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        /* Metric Widgets Styling */
+        div[data-testid="stMetricValue"] {
+            color: #101828 !important;
+            font-weight: 700 !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #4B5563 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 st.set_page_config(page_title="Finance & Investment Tracker", page_icon="💰", layout="wide")
 apply_custom_theme()
+inject_monarch_theme()
 
 CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
 
@@ -208,7 +274,6 @@ def page_transactions(uid: str, currency: str):
 
     st.caption(f"Showing {min(end, total_rows)} of {total_rows} transactions")
     
-    # --- FIXED EMPTY DATAFRAME HANDLING ---
     if total_rows > 0:
         for _, row in page_df.iterrows():
             cols = st.columns([2, 2, 2, 3, 2, 1, 1])
@@ -225,7 +290,6 @@ def page_transactions(uid: str, currency: str):
     else:
         st.info("No transactions match your current search/filters.")
 
-    # --- FIXED INLINE EDIT FORM OUT-OF-BOUNDS ERROR ---
     if st.session_state.get("editing_tx"):
         tx_id = st.session_state["editing_tx"]
         matching_txs = df[df["id"] == tx_id]
@@ -253,7 +317,6 @@ def page_transactions(uid: str, currency: str):
                 st.session_state.pop("editing_tx")
                 st.rerun()
         else:
-            # Safely clear editing state if transaction is no longer present in current filtered views
             st.session_state.pop("editing_tx")
 
 
@@ -281,7 +344,7 @@ def page_investments(uid: str, currency: str):
                 st.error("Enter a valid symbol, quantity, and purchase price.")
             else:
                 try:
-                    stock_service.get_current_price(symbol)  # validates the symbol exists
+                    stock_service.get_current_price(symbol)  
                     db_service.add_investment(
                         uid, symbol, quantity, purchase_price, purchase_date.isoformat()
                     )
